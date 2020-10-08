@@ -1,0 +1,228 @@
+service: swaggerui
+
+plugins:
+  - serverless-cloudformation-sub-variables
+  - serverless-s3-deploy
+  - serverless-s3-remover
+  - serverless-scriptable-plugin
+
+custom:
+  # change the project and/or service name to have unique baseName, that is used as a Cognito auth domain
+  project: betterdev
+  baseName: ${self:custom.project}-${self:provider.stage}-${self:service}
+
+  scriptHooks:
+    # build Swagger UI site
+    # this is done after the CF stack is being updated but before the S3 Deploy plugin triggers
+    after:aws:deploy:deploy:updateStack:
+      - generateConfigFile.js
+      - webpack --mode production --progress
+
+  assets:
+    auto: true
+    targets:
+      # copy Swagger UI website to S3 bucket on service deployment
+      - bucket: !Ref SwaggerBucket
+        files:
+          - source: dist
+            empty: true
+            globs: '**/*'
+
+  remover:
+    buckets:
+      # empty the Swagger UI S3 bucket content when removing the service so the bucket can be removed
+      - ${cf:${self:custom.baseName}.SwaggerBucketName, ''}
+
+provider:
+  name: aws
+  stage: ${opt:stage, 'dev'}
+  stackName: ${self:custom.baseName}
+
+functions:
+  hello:
+    handler: handler.hello
+    events:
+      - http:
+          path: hello
+          cors: true
+          method: GET
+          integration: mock
+          request:
+            template:
+              application/json: '{"statusCode": 200}'
+          response:
+            template: '{"greeting": "Hello Swagger!"}'
+            statusCodes:
+              200:
+                pattern: ''
+      - http:
+          path: hello
+          cors: true
+          method: POST
+          integration: mock
+          request:
+            template:
+              application/json: '{"statusCode": 200}'
+          response:
+            statusCodes:
+              201:
+                pattern: ''
+
+# the "hello" function has only mock API events and no actual code, minimize the size of the Lambda deployment package
+package:
+  exclude:
+    - ./**
+  include:
+    - README.md
+
+resources:
+  Conditions:
+    StageIsDev: !Equals [ '${self:provider.stage}', 'dev' ]
+
+  Resources:
+
+    # COGNITO
+
+    UserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:custom.baseName}-swaggerui
+        Schema:
+          - Name: email
+            Required: true
+            Mutable: true
+        AdminCreateUserConfig:
+          AllowAdminCreateUserOnly: true
+
+    UserPoolDomain:
+      Type: AWS::Cognito::UserPoolDomain
+      Properties:
+        UserPoolId: !Ref UserPool
+        Domain: ${self:custom.baseName}
+
+    SwaggerUIAppClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: SwaggerUI
+        UserPoolId: !Ref UserPool
+        GenerateSecret: false
+        SupportedIdentityProviders:
+          - COGNITO
+        AllowedOAuthFlowsUserPoolClient: true
+        AllowedOAuthFlows:
+          - code
+        AllowedOAuthScopes:
+          - email
+          - openid
+        CallbackURLs:
+          - !If
+            - StageIsDev
+            - http://localhost:8080
+            - !Ref AWS::NoValue
+          - https://#{SwaggerDistribution.DomainName}
+        LogoutURLs:
+          - !If
+            - StageIsDev
+            - http://localhost:8080
+            - !Ref AWS::NoValue
+          - https://#{SwaggerDistribution.DomainName}
+
+    SwaggerUIIdentityProvider:
+      Type: AWS::Cognito::IdentityPool
+      Properties:
+        IdentityPoolName: ${self:custom.baseName}-swaggerui
+        CognitoIdentityProviders:
+          - ProviderName: cognito-idp.#{AWS::Region}.amazonaws.com/#{UserPool}
+            ClientId: !Ref SwaggerUIAppClient
+        AllowUnauthenticatedIdentities: false
+
+    SwaggerUIIdentityProviderRoles:
+      Type: AWS::Cognito::IdentityPoolRoleAttachment
+      Properties:
+        IdentityPoolId: !Ref SwaggerUIIdentityProvider
+        Roles:
+          authenticated: !GetAtt SwaggerUIAuthRole.Arn
+
+    # S3
+
+    SwaggerBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        WebsiteConfiguration:
+          IndexDocument: index.html
+          ErrorDocument: index.html
+
+    SwaggerBucketCloudFrontAccessPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref SwaggerBucket
+        PolicyDocument:
+          Statement:
+            - Action: s3:GetObject
+              Effect: Allow
+              Resource: 'arn:aws:s3:::#{SwaggerBucket}/*'
+              Principal: '*'
+
+    # CLOUDFRONT
+
+    SwaggerDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Enabled: true
+          Comment: ${self:custom.baseName}-swaggerui
+          HttpVersion: http2
+          Origins:
+            - Id: swaggerS3
+              DomainName: !Select [ 2, !Split [ '/', '#{SwaggerBucket.WebsiteURL}' ] ]
+              CustomOriginConfig:
+                OriginProtocolPolicy: http-only
+          DefaultRootObject: index.html
+          DefaultCacheBehavior:
+            TargetOriginId: swaggerS3
+            AllowedMethods:
+              - GET
+              - HEAD
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            ViewerProtocolPolicy: redirect-to-https
+            ForwardedValues:
+              QueryString: 'false'
+              Cookies:
+                Forward: none
+          PriceClass: PriceClass_100
+          ViewerCertificate:
+            CloudFrontDefaultCertificate: 'true'
+
+    # IAM
+
+    SwaggerUIAuthRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Federated: cognito-identity.amazonaws.com
+              Action: sts:AssumeRoleWithWebIdentity
+              Condition:
+                StringEquals:
+                  cognito-identity.amazonaws.com:aud: !Ref SwaggerUIIdentityProvider
+                ForAnyValue:StringLike:
+                  cognito-identity.amazonaws.com:amr: authenticated
+        Policies:
+          - PolicyName: api-gateway
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action: apigateway:GET
+                  Resource: "arn:aws:apigateway:#{AWS::Region}::/restapis/#{ApiGatewayRestApi}/stages/${self:provider.stage}/exports/*"
+
+  # save bucket name in outputs so it can be found when removing the service
+  Outputs:
+    SwaggerBucketName:
+      Value: !Ref SwaggerBucket

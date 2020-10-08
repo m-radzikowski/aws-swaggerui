@@ -1,0 +1,28 @@
+@import '../node_modules/swagger-ui-dist/swagger-ui.css';
+
+body {
+    margin: 0;
+    background: #fafafa;
+}
+
+#topbar {
+    background-color: #1b1b1b;
+    padding: 15px 0;
+    color: #fafafa;
+    text-align: right;
+}
+
+#logout {
+    display: inline-block;
+    margin-left: 30px;
+    border: none;
+    border-radius: 3px;
+    color: #ffffff;
+    text-shadow: 0 1px 0 rgba(0, 0, 0, .1);
+    font-size: 13px;
+    background: rgb(137, 191, 4);
+    padding: 6px 15px;
+    text-decoration: none;
+    text-transform: uppercase;
+    font-weight: bold;
+}

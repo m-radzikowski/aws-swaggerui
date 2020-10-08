@@ -1,0 +1,7 @@
+.idea
+node_modules
+.serverless
+build
+dist
+
+src/config.json
