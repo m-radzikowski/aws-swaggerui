@@ -1,11 +1,18 @@
-# Self-hosted serverless Swagger UI for API Gateway
+# Serverless Swagger UI for API Gateway
+
+Example of automatically built and deployed
+Swagger UI website with interactive documentation
+for the API Gateway, protected with Cognito user authentication.
+
+See the article with full description:
+[Serverless Swagger UI for API Gateway](https://betterdev.blog/serverless-swagger-ui-for-api-gateway/)
 
 ## Development
 
 Install dependencies:
 
 ```bash
-yarn
+yarn install
 ```
 
 Before deployment change the `project` and/or `service` name
@@ -24,5 +31,13 @@ Run Swagger UI locally (for Swagger UI website development):
 yarn run start
 ```
 
+It will start the development server at http://localhost:8080.
+
 The service must be deployed first to run Swagger UI locally
 because the website connects to the deployed AWS services.
+
+Remove deployed stack:
+
+```bash
+yarn run remove --region REGION
+```
