@@ -147,10 +147,6 @@ resources:
 
     SwaggerBucket:
       Type: AWS::S3::Bucket
-      Properties:
-        WebsiteConfiguration:
-          IndexDocument: index.html
-          ErrorDocument: index.html
 
     SwaggerBucketCloudFrontAccessPolicy:
       Type: AWS::S3::BucketPolicy
@@ -161,7 +157,8 @@ resources:
             - Action: s3:GetObject
               Effect: Allow
               Resource: 'arn:aws:s3:::#{SwaggerBucket}/*'
-              Principal: '*'
+              Principal:
+                CanonicalUser: !GetAtt SwaggerDistributionOAI.S3CanonicalUserId
 
     # CLOUDFRONT
 
@@ -174,9 +171,9 @@ resources:
           HttpVersion: http2
           Origins:
             - Id: swaggerS3
-              DomainName: !Select [ 2, !Split [ '/', '#{SwaggerBucket.WebsiteURL}' ] ]
-              CustomOriginConfig:
-                OriginProtocolPolicy: http-only
+              DomainName: '#{SwaggerBucket.RegionalDomainName}'
+              S3OriginConfig:
+                OriginAccessIdentity: 'origin-access-identity/cloudfront/#{SwaggerDistributionOAI}'
           DefaultRootObject: index.html
           DefaultCacheBehavior:
             TargetOriginId: swaggerS3
@@ -195,6 +192,12 @@ resources:
           PriceClass: PriceClass_100
           ViewerCertificate:
             CloudFrontDefaultCertificate: 'true'
+
+    SwaggerDistributionOAI:
+      Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+      Properties:
+        CloudFrontOriginAccessIdentityConfig:
+          Comment: 'Access #{SwaggerBucket} bucket'
 
     # IAM
 
