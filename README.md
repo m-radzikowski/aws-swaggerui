@@ -13,6 +13,8 @@ Install dependencies:
 
 ```bash
 yarn install
+Or 
+npm install 
 ```
 
 Before deployment change the `project` and/or `service` name
@@ -23,12 +25,16 @@ Deploy:
 
 ```bash
 yarn run deploy --region REGION
+Or 
+npm run deploy --region REGION 
 ```
 
 Run Swagger UI locally (for Swagger UI website development):
 
 ```bash
 yarn run start
+Or 
+npm run start 
 ```
 
 It will start the development server at http://localhost:8080.
@@ -40,4 +46,40 @@ Remove deployed stack:
 
 ```bash
 yarn run remove --region REGION
+or
+npm run remove --region REGION
+```
+
+
+# Serverless deployment steps
+
+### Step 1 :
+```
+sls config credentials --provider aws --key 1234 --secret 5678
+```
+### Step 2 :
+```
+sls deploy
+or
+sls deploy --region REGION
+```
+### Step 3 :
+```
+sls remove --region REGION
+```
+### Step 4 : 
+```
+create a new user under "Manage User Pools > newly created user pull"
+```
+### Step 5 : 
+```
+Go to CloudFront click the Url it will open the website with login form 
+```
+### Step 6 :
+```
+Login with the user id and pass that you have created in step 4
+```
+### Step 7 :
+```
+After successful login it will redirect to the UI with all the API details  
 ```
